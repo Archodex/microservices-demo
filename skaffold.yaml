@@ -47,6 +47,8 @@ build:
     context: src/frontend
   - image: adservice
     context: src/adservice
+  - image: subscriptions
+    context: src/subscriptions
   tagPolicy:
     gitCommit: {}
   local:
@@ -106,6 +108,10 @@ profiles:
   - op: replace
     path: /deploy/kubectl/flags/global/0
     value: --namespace=prod
+  - op: add
+    path: /manifests/rawYaml
+    value:
+      - ./kubernetes-manifests/subscriptions.yaml
 ---
 apiVersion: skaffold/v3
 kind: Config
