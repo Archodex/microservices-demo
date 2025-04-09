@@ -51,6 +51,10 @@ spec:
           value: "50051"
         - name: DISABLE_PROFILER
           value: "1"
+        - name: KUBERNETES_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         readinessProbe:
           grpc:
             port: 50051

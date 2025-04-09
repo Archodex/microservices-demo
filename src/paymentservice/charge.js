@@ -52,13 +52,22 @@ class ExpiredCreditCard extends CreditCardError {
   }
 }
 
+let stripePromise = new Promise(async (resolve, reject) => {
+  try {
+    const stripe_api_key = await require('./secret')(logger);
+    resolve(require('stripe')(stripe_api_key));
+  } catch (error) {
+    reject(error);
+  }
+})
+
 /**
  * Verifies the credit card number and (pretend) charges the card.
  *
  * @param {*} request
  * @return transaction_id - a random uuid.
  */
-module.exports = function charge (request) {
+module.exports = async function charge (request) {
   const { amount, credit_card: creditCard } = request;
   const cardNumber = creditCard.credit_card_number;
   const cardInfo = cardValidator(cardNumber);
@@ -78,6 +87,27 @@ module.exports = function charge (request) {
   const currentYear = new Date().getFullYear();
   const { credit_card_expiration_year: year, credit_card_expiration_month: month } = creditCard;
   if ((currentYear * 12 + currentMonth) > (year * 12 + month)) { throw new ExpiredCreditCard(cardNumber.replace('-', ''), month, year); }
+
+  let stripe;
+  try {
+    stripe = await stripePromise;
+  } catch (error) {
+    logger.error('Error initializing Stripe: %o', error);
+    throw new CreditCardError('Unable to process your credit card');
+  }
+
+  stripe.charges.create({
+    amount: (amount.units * 100) + Math.floor(amount.nanos / 1000000),
+    currency: amount.currency_code,
+    source: creditCard.credit_card_number,
+    description: `Charge for ${creditCard.credit_card_number}`
+  }, (err, charge) => {
+    // Expected in this fake service with an invalid API key. Ignore.
+    if (err) {
+      logger.info('Received expected err from Stripe: %o',err);
+      //throw new CreditCardError('Unable to process your credit card');
+    }
+  });
 
   logger.info(`Transaction processed: ${cardType} ending ${cardNumber.substr(-4)} \
     Amount: ${amount.currency_code}${amount.units}.${amount.nanos}`);
