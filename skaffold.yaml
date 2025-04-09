@@ -57,7 +57,11 @@ manifests:
     paths:
     - kubernetes-manifests
 deploy:
-  kubectl: {}
+  kubectl:
+    flags:
+      global:
+      # Error by default if profile is not specified that overrides the namespace
+      - --namespace='invalid (you forgot to specify a skaffold profile)
 # "gcb" profile allows building and pushing the images
 # on Google Container Builder without requiring docker
 # installed on the developer machine. However, note that
@@ -92,6 +96,16 @@ profiles:
   - op: add
     path: /manifests/kustomize/paths/1
     value: kustomize/components/network-policies
+- name: qa
+  patches:
+  - op: replace
+    path: /deploy/kubectl/flags/global/0
+    value: --namespace=qa
+- name: prod
+  patches:
+  - op: replace
+    path: /deploy/kubectl/flags/global/0
+    value: --namespace=prod
 ---
 apiVersion: skaffold/v3
 kind: Config
@@ -108,7 +122,11 @@ manifests:
   rawYaml:
   - ./kubernetes-manifests/loadgenerator.yaml
 deploy:
-  kubectl: {}
+  kubectl:
+    flags:
+      global:
+      # Error by default if profile is not specified that overrides the namespace
+      - --namespace='invalid (you forgot to specify a skaffold profile)
 profiles:
 - name: gcb
   build:
@@ -116,3 +134,13 @@ profiles:
       diskSizeGb: 300
       machineType: N1_HIGHCPU_32
       timeout: 4000s
+- name: qa
+  patches:
+  - op: replace
+    path: /deploy/kubectl/flags/global/0
+    value: --namespace=qa
+- name: prod
+  patches:
+  - op: replace
+    path: /deploy/kubectl/flags/global/0
+    value: --namespace=prod
