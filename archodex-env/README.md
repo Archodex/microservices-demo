@@ -206,3 +206,13 @@ Run the following steps from the root directory of this repo
 1. Run demo workloads
     1. Run `skaffold run -p qa`
     1. Run `skaffold run -p prod`
+
+## Manage with Kubewall
+The following instructions detail how to manage the Kubernetes Cluster with [Kubewall](https://github.com/kubewall/kubewall) when running the Cluster inside Docker Desktop.
+
+1. Ensure Host Networking is enabled in your Docker Desktop Settings
+1. Run Kubewall: `docker run --network host -d --name kubewall -v kubewall:/.kubewall ghcr.io/kubewall/kubewall:latest`
+1. Open the following URL in your browser: `http://localhost:7080`
+1. Click *Add Config*
+1. Select *kubeconfig file*
+1. Choose your local kubeconfig file from `~/.kube/config`
