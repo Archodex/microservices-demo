@@ -20,6 +20,8 @@
 *~
 bin/
 build/
+cert/
+cluster-keys.json
 Dockerfile.pip
 node_modules/
 obj/
