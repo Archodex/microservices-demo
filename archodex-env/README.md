@@ -92,9 +92,9 @@ frontend --> cart
 checkout --> cart
 
 block:tier5
+    subscriptions["subscriptions\n\nCron job that runs each day only in prod,\nuses hardcoded credentials for Stripe to charge subscribers"]
     space
-    shippingreport["shippingreport\n\nCron job that runs each day, calls out to Secrets Manager for both shipengine.com and SES SMTP creds, then gets reports and sends emails"]
-    space
+    shippingreport["shippingreport\n\nCron job that runs each day only in prod,\ncalls out to Secrets Manager for both shipengine.com\nand SES SMTP creds, then gets reports and sends emails"]
 end
 ```
 
@@ -152,7 +152,6 @@ Run the following steps from the root directory of this repo
             ```
 
     1. Add Helm repo: `helm repo add hashicorp https://helm.releases.hashicorp.com`
-    1. Fetch Helm charts: `helm repo update`
     1. Install Vault: `helm install vault hashicorp/vault --namespace vault --values archodex-env/helm-vault-values.yml`
     1. Initialize Vault:
         ```sh
