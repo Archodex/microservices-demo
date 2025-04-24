@@ -55,7 +55,11 @@ class ExpiredCreditCard extends CreditCardError {
 let stripePromise = new Promise(async (resolve, reject) => {
   try {
     const stripe_api_key = await require('./secret')(logger);
-    resolve(require('stripe')(stripe_api_key));
+    const config = {
+      // Disable keep alive so we can test instrumenting running processes
+      httpAgent: new require('https').Agent(),
+    };
+    resolve(require('stripe')(stripe_api_key, config));
   } catch (error) {
     reject(error);
   }
