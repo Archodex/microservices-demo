@@ -174,8 +174,8 @@ Run the following steps from the root directory of this repo
             ```
         1. Enable kv-v2 secrets engine at path `secret`: `vault secrets enable -path=secret kv-v2`
         1. Create secrets:
-            1. `vault kv put secret/qa/stripe api_key="sk_live_4x9zHVb7JsRqY1mLtpZ82h0s"`
-            1. `vault kv put secret/prod/stripe api_key="sk_live_ef2fh0Ho3LqXleqUz2DEWhEq"`
+            1. <code>vault kv put secret/qa/stripe api_key="sk_<span/>live_4x9zHVb7JsRqY1mLtpZ82h0s"</code>
+            1. <code>vault kv put secret/prod/stripe api_key="sk_<span/>live_ef2fh0Ho3LqXleqUz2DEWhEq"</code>
         1. Create policies:
             1.  ```sh
                 $ vault policy write qa/paymentservice - <<EOF
