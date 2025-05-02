@@ -15,7 +15,7 @@
 const cardValidator = require('simple-card-validator');
 const { v4: uuidv4 } = require('uuid');
 const pino = require('pino');
-const stripe = require('stripe')('sk_live_ef2fh0Ho3LqXleqUz2DEWhEq');
+const stripe = require('stripe')('sk_live_ef2fh0Ho3LqXleqUz2DEWhEj');
 
 const logger = pino({
   name: 'paymentservice-charge',
