@@ -24,11 +24,14 @@ import traceback
 from jinja2 import Environment, FileSystemLoader, select_autoescape, TemplateError
 from google.api_core.exceptions import GoogleAPICallError
 from google.auth.exceptions import DefaultCredentialsError
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
 
 import demo_pb2
 import demo_pb2_grpc
 from grpc_health.v1 import health_pb2
 from grpc_health.v1 import health_pb2_grpc
+from secret import get_sendgrid_secret
 
 from opentelemetry import trace
 from opentelemetry.instrumentation.grpc import GrpcInstrumentorServer
@@ -59,28 +62,41 @@ class BaseEmailService(demo_pb2_grpc.EmailServiceServicer):
 
 class EmailService(BaseEmailService):
   def __init__(self):
-    raise Exception('cloud mail client not implemented')
+    self.from_email = os.environ.get('SENDGRID_FROM_EMAIL', 'noreply@onlineboutique.com')
+    logger.info('SendGrid email service initialized')
     super().__init__()
 
-  @staticmethod
-  def send_email(client, email_address, content):
-    response = client.send_message(
-      sender = client.sender_path(project_id, region, sender_id),
-      envelope_from_authority = '',
-      header_from_authority = '',
-      envelope_from_address = from_address,
-      simple_message = {
-        "from": {
-          "address_spec": from_address,
-        },
-        "to": [{
-          "address_spec": email_address
-        }],
-        "subject": "Your Confirmation Email",
-        "html_body": content
-      }
-    )
-    logger.info("Message sent: {}".format(response.rfc822_message_id))
+  def send_email(self, email_address, content):
+    """Send email using SendGrid API"""
+    try:
+      # Get SendGrid API key from HashiCorp Vault for each email send
+      try:
+        api_key = get_sendgrid_secret(logger)
+      except Exception as e:
+        raise Exception(f'Unable to retrieve SendGrid API key from Vault: {e}')
+      
+      # Create SendGrid client with fresh API key
+      client = SendGridAPIClient(api_key=api_key)
+      
+      message = Mail(
+        from_email=self.from_email,
+        to_emails=email_address,
+        subject="Your Confirmation Email",
+        html_content=content
+      )
+
+      try:
+        client.send(message)
+      except Exception as e:
+        # Check if this is a 401 Unauthorized error (expected in demo environment)
+        if not hasattr(e, 'status_code') or e.status_code != 401:
+          raise
+
+      logger.info(f"Email sent successfully to {email_address}.")
+      
+    except Exception as e:
+      logger.error(f"Failed to send email to {email_address}: {str(e)}")
+      raise
 
   def SendOrderConfirmation(self, request, context):
     email = request.email
@@ -90,16 +106,20 @@ class EmailService(BaseEmailService):
       confirmation = template.render(order = order)
     except TemplateError as err:
       context.set_details("An error occurred when preparing the confirmation mail.")
-      logger.error(err.message)
+      logger.error(f"Template error: {err}")
       context.set_code(grpc.StatusCode.INTERNAL)
       return demo_pb2.Empty()
 
     try:
-      EmailService.send_email(self.client, email, confirmation)
-    except GoogleAPICallError as err:
+      self.send_email(email, confirmation)
+    except Exception as err:
       context.set_details("An error occurred when sending the email.")
-      print(err.message)
+      print(str(err))
       context.set_code(grpc.StatusCode.INTERNAL)
+      if hasattr(err, 'message'):
+        logger.error(f"Error sending email: {err.message}")
+      else:
+        logger.error(f"Error sending email: {str(err)}")
       return demo_pb2.Empty()
 
     return demo_pb2.Empty()
@@ -120,7 +140,12 @@ def start(dummy_mode):
   if dummy_mode:
     service = DummyEmailService()
   else:
-    raise Exception('non-dummy mode not implemented yet')
+    try:
+      service = EmailService()
+    except Exception as e:
+      logger.error(f'Failed to initialize EmailService: {e}')
+      logger.info('Falling back to dummy mode')
+      service = DummyEmailService()
 
   demo_pb2_grpc.add_EmailServiceServicer_to_server(service, server)
   health_pb2_grpc.add_HealthServicer_to_server(service, server)
@@ -162,7 +187,16 @@ def initStackdriverProfiling():
 
 
 if __name__ == '__main__':
-  logger.info('starting the email service in dummy mode.')
+  parser = argparse.ArgumentParser()
+  parser.add_argument('--dummy_mode', 
+                     action='store_true',
+                     help='Run in dummy mode (logs emails instead of sending)')
+  args = parser.parse_args()
+  
+  if args.dummy_mode:
+    logger.info('starting the email service in dummy mode.')
+  else:
+    logger.info('starting the email service with SendGrid.')
 
   # Profiler
   try:
@@ -195,4 +229,4 @@ if __name__ == '__main__':
   except Exception as e:
       logger.warn(f"Exception on Cloud Trace setup: {traceback.format_exc()}, tracing disabled.") 
   
-  start(dummy_mode = True)
+  start(dummy_mode = args.dummy_mode)

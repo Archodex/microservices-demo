@@ -176,6 +176,7 @@ Run the following steps from the root directory of this repo
         1. Create secrets:
             1. <code>vault kv put secret/qa/stripe api_key="sk_<span/>live_4x9zHVb7JsRqY1mLtpZ82h0j"</code>
             1. <code>vault kv put secret/prod/stripe api_key="sk_<span/>live_ef2fh0Ho3LqXleqUz2DEWhEj"</code>
+            1. <code>vault kv put secret/prod/sendgrid api_key="SG<span/>.ZV-VYwtHzJJW4wF8yPQk3.ZXg9c9DZuOgUcW1f2inP6SqfEsYG82zAe0wG7brZZ5OvruV-I"</code>
         1. Create policies:
             1.  ```sh
                 $ vault policy write qa/paymentservice - <<EOF
@@ -199,6 +200,23 @@ Run the following steps from the root directory of this repo
                     bound_service_account_names=paymentservice \
                     bound_service_account_namespaces=prod \
                     policies=prod/paymentservice \
+                    ttl=24h
+                ```
+            1.  ```sh
+                $ vault policy write prod/emailservice - <<EOF
+                path "secret/data/prod/sendgrid" {
+                    capabilities = ["read"]
+                }
+                EOF
+                $ vault write auth/kubernetes/role/prod-emailservice \
+                    bound_service_account_names=emailservice \
+                    bound_service_account_namespaces=prod \
+                    policies=prod/emailservice \
+                    ttl=24h
+                $ vault write auth/kubernetes/role/qa-emailservice \
+                    bound_service_account_names=emailservice \
+                    bound_service_account_namespaces=qa \
+                    policies=prod/emailservice \
                     ttl=24h
                 ```
 
