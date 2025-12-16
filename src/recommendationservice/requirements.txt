@@ -4,12 +4,22 @@
 #
 #    pip-compile requirements.in
 #
+annotated-types==0.7.0
+    # via pydantic
+anyio==4.4.0
+    # via
+    #   httpcore
+    #   httpx
 cachetools==6.2.4
     # via google-auth
 certifi==2025.11.12
-    # via requests
+    # via
+    #   httpx
+    #   requests
 charset-normalizer==3.4.4
     # via requests
+distro==1.9.0
+    # via openai
 google-api-core==2.28.1
     # via
     #   -r requirements.in
@@ -38,12 +48,20 @@ grpcio==1.76.0
     #   opentelemetry-exporter-otlp-proto-grpc
 grpcio-health-checking==1.76.0
     # via -r requirements.in
+h11==0.14.0
+    # via httpcore
+httpcore==1.0.5
+    # via httpx
+httpx==0.27.0
+    # via openai
 httplib2==0.31.0
     # via
     #   google-api-python-client
     #   google-auth-httplib2
 idna==3.11
-    # via requests
+    # via
+    #   httpx
+    #   requests
 importlib-metadata==8.7.0
     # via opentelemetry-api
 opentelemetry-api==1.39.1
@@ -79,6 +97,8 @@ opentelemetry-semantic-conventions==0.60b1
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-grpc
     #   opentelemetry-sdk
+openai==1.35.7
+    # via -r requirements.in
 packaging==25.0
     # via opentelemetry-instrumentation
 proto-plus==1.27.0
@@ -99,6 +119,10 @@ pyasn1-modules==0.4.2
     # via google-auth
 pyparsing==3.2.5
     # via httplib2
+pydantic==2.8.2
+    # via openai
+pydantic-core==2.20.1
+    # via pydantic
 python-json-logger==4.0.0
     # via -r requirements.in
 requests==2.32.5
@@ -110,13 +134,20 @@ rsa==4.9.1
     # via
     #   -r requirements.in
     #   google-auth
+sniffio==1.3.1
+    # via
+    #   anyio
+    #   httpcore
+    #   httpx
 typing-extensions==4.15.0
     # via
     #   grpcio
+    #   openai
     #   opentelemetry-api
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
+    #   pydantic
 uritemplate==4.2.0
     # via google-api-python-client
 urllib3==2.6.2
@@ -127,3 +158,6 @@ wrapt==1.17.3
     #   opentelemetry-instrumentation-grpc
 zipp==3.23.0
     # via importlib-metadata
+
+# The following packages are considered to be unsafe in a requirements file:
+# setuptools

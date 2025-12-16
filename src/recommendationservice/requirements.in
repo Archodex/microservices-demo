@@ -1,6 +1,7 @@
 google-api-core
 google-cloud-profiler
 grpcio-health-checking
+openai
 python-json-logger
 requests
 rsa
