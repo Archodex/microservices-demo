@@ -26,7 +26,8 @@ resources:
  - productcatalogservice.yaml
  - recommendationservice.yaml
  - shippingservice.yaml
-# components:
+components:
+- ../kustomize/components/otel-tracing
 # - ../kustomize/components/cymbal-branding
 # - ../kustomize/components/google-cloud-operations
 # - ../kustomize/components/memorystore
