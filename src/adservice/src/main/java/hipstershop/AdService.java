@@ -19,6 +19,7 @@ package hipstershop;
 import com.google.common.collect.ImmutableListMultimap;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
+import com.amazon.corretto.crypto.provider.AmazonCorrettoCryptoProvider;
 import hipstershop.Demo.Ad;
 import hipstershop.Demo.AdRequest;
 import hipstershop.Demo.AdResponse;
@@ -51,6 +52,8 @@ public final class AdService {
   private static final AdService service = new AdService();
 
   private void start() throws IOException {
+    AmazonCorrettoCryptoProvider.install();
+
     int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "9555"));
     healthMgr = new HealthStatusManager();
 
