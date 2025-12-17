@@ -14,6 +14,23 @@
  * limitations under the License.
  */
 
+// OpenTelemetry tracing setup - MUST be before any other imports that use gRPC
+// (including @google-cloud/profiler which loads gRPC internally)
+if(process.env.ENABLE_TRACING == "1") {
+  const { NodeSDK } = require('@opentelemetry/sdk-node');
+  const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-grpc');
+  const { GrpcInstrumentation } = require('@opentelemetry/instrumentation-grpc');
+
+  const sdk = new NodeSDK({
+    serviceName: process.env.OTEL_SERVICE_NAME || 'currencyservice',
+    traceExporter: new OTLPTraceExporter({
+      url: `http://${process.env.COLLECTOR_SERVICE_ADDR}`,
+    }),
+    instrumentations: [new GrpcInstrumentation()],
+  });
+  sdk.start();
+}
+
 const pino = require('pino');
 const logger = pino({
   name: 'currencyservice-server',
@@ -24,6 +41,12 @@ const logger = pino({
     }
   }
 });
+
+if(process.env.ENABLE_TRACING == "1") {
+  logger.info("Tracing enabled.")
+} else {
+  logger.info("Tracing disabled.")
+}
 
 if(process.env.DISABLE_PROFILER) {
   logger.info("Profiler disabled.")
@@ -36,38 +59,6 @@ else {
       version: '1.0.0'
     }
   });
-}
-
-// Register GRPC OTel Instrumentation for trace propagation
-// regardless of whether tracing is emitted.
-const { GrpcInstrumentation } = require('@opentelemetry/instrumentation-grpc');
-const { registerInstrumentations } = require('@opentelemetry/instrumentation');
-
-registerInstrumentations({
-  instrumentations: [new GrpcInstrumentation()]
-});
-
-if(process.env.ENABLE_TRACING == "1") {
-  logger.info("Tracing enabled.")
-  const { NodeTracerProvider } = require('@opentelemetry/sdk-trace-node');
-  const { SimpleSpanProcessor } = require('@opentelemetry/sdk-trace-base');
-  const { OTLPTraceExporter } = require("@opentelemetry/exporter-otlp-grpc");
-  const { Resource } = require('@opentelemetry/resources');
-  const { SemanticResourceAttributes } = require('@opentelemetry/semantic-conventions');
-
-  const provider = new NodeTracerProvider({
-    resource: new Resource({
-      [SemanticResourceAttributes.SERVICE_NAME]: process.env.OTEL_SERVICE_NAME || 'currencyservice',
-    }),
-  });
-
-  const collectorUrl = process.env.COLLECTOR_SERVICE_ADDR
-
-  provider.addSpanProcessor(new SimpleSpanProcessor(new OTLPTraceExporter({url: collectorUrl})));
-  provider.register();
-}
-else {
-  logger.info("Tracing disabled.")
 }
 
 const path = require('path');

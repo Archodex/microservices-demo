@@ -85,6 +85,8 @@ type frontendServer struct {
 	collectorConn *grpc.ClientConn
 
 	shoppingAssistantSvcAddr string
+
+	httpClient *http.Client // Instrumented HTTP client for trace propagation
 }
 
 func main() {
@@ -106,6 +108,12 @@ func main() {
 	otel.SetTextMapPropagator(
 		propagation.NewCompositeTextMapPropagator(
 			propagation.TraceContext{}, propagation.Baggage{}))
+
+	// Create HTTP client with trace context propagation
+	svc.httpClient = &http.Client{
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+		Timeout:   30 * time.Second,
+	}
 
 	baseUrl = os.Getenv("BASE_URL")
 
