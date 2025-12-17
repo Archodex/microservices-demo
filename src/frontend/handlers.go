@@ -462,14 +462,14 @@ func (fe *frontendServer) chatBotHandler(w http.ResponseWriter, r *http.Request)
 	var response LLMResponse
 
 	url := "http://" + fe.shoppingAssistantSvcAddr
-	req, err := http.NewRequest(http.MethodPost, url, r.Body)
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, url, r.Body)
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to create request"), http.StatusInternalServerError)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	res, err := http.DefaultClient.Do(req)
+	res, err := fe.httpClient.Do(req)
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to send request"), http.StatusInternalServerError)
 		return
