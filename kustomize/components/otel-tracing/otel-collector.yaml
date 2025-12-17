@@ -29,7 +29,7 @@ data:
         endpoint: https://api.axiom.co
         headers:
           Authorization: Bearer ${env:AXIOM_API_TOKEN}
-          X-Axiom-Dataset: test-1
+          X-Axiom-Dataset: ${env:AXIOM_DATASET}
 
     service:
       pipelines:
@@ -73,6 +73,11 @@ spec:
             secretKeyRef:
               name: archodex-otel-axiom-token
               key: value
+        - name: AXIOM_DATASET
+          valueFrom:
+            configMapKeyRef:
+              name: otel-collector-env
+              key: dataset
         volumeMounts:
         - name: config
           mountPath: /conf
