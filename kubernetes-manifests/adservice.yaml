@@ -49,6 +49,8 @@ spec:
         env:
         - name: PORT
           value: "9555"
+        - name: PRODUCT_CATALOG_SERVICE_ADDR
+          value: "productcatalogservice:3550"
         resources:
           requests:
             cpu: 200m
