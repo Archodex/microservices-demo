@@ -19,6 +19,7 @@ def grpcVersion = "1.71.0"
 def jacksonCoreVersion = "2.18.3"
 def jacksonDatabindVersion = "2.18.3"
 def protocVersion = "4.30.1"
+def awsSdkVersion = "2.40.9"
 
 java {
     toolchain {
@@ -51,9 +52,9 @@ dependencies {
                 "com.google.protobuf:protobuf-java:${protocVersion}",
                 "com.fasterxml.jackson.core:jackson-core:${jacksonCoreVersion}",
                 "com.fasterxml.jackson.core:jackson-databind:${jacksonDatabindVersion}",
-                "software.amazon.awssdk:bedrock:2.+",
-                "software.amazon.awssdk:bedrockruntime:2.+",
-                "software.amazon.cryptools:AmazonCorrettoCryptoProvider:2.+:${osdetector.classifier}"
+                "software.amazon.awssdk:bedrock:${awsSdkVersion}",
+                "software.amazon.awssdk:bedrockruntime:${awsSdkVersion}",
+                "software.amazon.cryptools:AmazonCorrettoCryptoProvider:2.4.1:${osdetector.classifier}"
 
         runtimeOnly "io.netty:netty-tcnative-boringssl-static:2.0.70.Final"
     }
