@@ -51,6 +51,21 @@ spec:
           value: "9555"
         - name: PRODUCT_CATALOG_SERVICE_ADDR
           value: "productcatalogservice:3550"
+        - name: AWS_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: llm-config
+              key: AWS_REGION
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: adservice-aws-credentials
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: adservice-aws-credentials
+              key: AWS_SECRET_ACCESS_KEY
         resources:
           requests:
             cpu: 200m
