@@ -164,3 +164,66 @@ Find **Protocol Buffers Descriptions** at the [`./protos` directory](/protos).
   - [Introduction to Service Management with Istio](https://www.youtube.com/watch?v=wCJrdKdD6UM&feature=youtu.be&t=586)
 - [Google Cloud Next'18 London – Keynote](https://youtu.be/nIq2pkNcfEI?t=3071)
   showing Stackdriver Incident Response Management
+
+## Archodex Configuration
+
+This fork requires additional secrets and configuration for LLM services and OpenTelemetry tracing.
+
+### Required Secrets
+
+Create these secrets before deploying. **Secrets are namespaced** - create them in the same namespace where services will be deployed (e.g., `-n qa` or `-n prod`).
+
+| Secret Name | Key | Used By | Description |
+|-------------|-----|---------|-------------|
+| `adservice-aws-credentials` | `AWS_ACCESS_KEY_ID` | adservice | AWS access key for Bedrock (must grant access to Amazon Nova 2 Lite model) |
+| `adservice-aws-credentials` | `AWS_SECRET_ACCESS_KEY` | adservice | AWS secret key for Bedrock |
+| `recommendationservice-openrouter` | `OPENROUTER_API_KEY` | recommendationservice | OpenRouter API key |
+| `archodex-otel-axiom-token` | `value` | opentelemetrycollector | Axiom API token (if using otel-tracing component) |
+
+Example:
+```bash
+# LLM Services (required) - add -n <namespace> to match your deployment
+kubectl create secret generic adservice-aws-credentials \
+  -n <namespace> \
+  --from-literal=AWS_ACCESS_KEY_ID=<your-key> \
+  --from-literal=AWS_SECRET_ACCESS_KEY=<your-secret>
+
+kubectl create secret generic recommendationservice-openrouter \
+  -n <namespace> \
+  --from-literal=OPENROUTER_API_KEY=<your-key>
+
+# OpenTelemetry (if using otel-tracing component)
+kubectl create secret generic archodex-otel-axiom-token \
+  -n <namespace> \
+  --from-literal=value=<your-axiom-api-token>
+```
+
+### Required ConfigMaps
+
+ConfigMaps are also namespaced - create them in the same namespace as the services.
+
+| ConfigMap Name | Key | Used By | Description |
+|----------------|-----|---------|-------------|
+| `otel-collector-env` | `dataset` | opentelemetrycollector | Axiom dataset name (if using otel-tracing component) |
+
+Example:
+```bash
+# OpenTelemetry (if using otel-tracing component)
+kubectl create configmap otel-collector-env \
+  -n <namespace> \
+  --from-literal=dataset=<your-axiom-dataset>
+```
+
+### Optional Configuration (ConfigMap)
+
+The `llm-config` ConfigMap (deployed with the services) contains overridable LLM settings:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `AWS_REGION` | `us-west-2` | AWS region for Bedrock API |
+| `OPENROUTER_TIMEOUT_SECONDS` | `30` | Request timeout for OpenRouter calls |
+
+To override, edit the ConfigMap:
+```bash
+kubectl edit configmap llm-config -n <namespace>
+```
