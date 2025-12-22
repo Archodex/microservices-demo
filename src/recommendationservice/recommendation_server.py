@@ -35,9 +35,13 @@ from grpc_health.v1 import health_pb2_grpc
 
 from opentelemetry import trace
 from opentelemetry.instrumentation.grpc import GrpcInstrumentorClient, GrpcInstrumentorServer
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
+# Instrument httpx BEFORE importing OpenAI (which uses httpx internally)
+HTTPXClientInstrumentor().instrument()
 
 from openai import OpenAI
 

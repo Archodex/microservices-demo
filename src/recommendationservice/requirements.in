@@ -7,4 +7,5 @@ requests
 rsa
 opentelemetry-distro
 opentelemetry-instrumentation-grpc
+opentelemetry-instrumentation-httpx
 opentelemetry-exporter-otlp-proto-grpc
