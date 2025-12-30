@@ -146,8 +146,6 @@ class RecommendationService(demo_pb2_grpc.RecommendationServiceServicer):
         ]
         if len(remaining_ids) <= MAX_RECOMMENDATIONS:
             logger.info("Returning short-circuited recommendations (remaining catalog <= limit)")
-            if recommendation_cache:
-                recommendation_cache.set(request.product_ids, remaining_ids)
             return remaining_ids
         cached = recommendation_cache.get(request.product_ids) if recommendation_cache else None
         if cached:
