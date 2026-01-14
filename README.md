@@ -216,14 +216,37 @@ kubectl create configmap otel-collector-env \
 
 ### Optional Configuration (ConfigMap)
 
-The `llm-config` ConfigMap (deployed with the services) contains overridable LLM settings:
+The `llm-config` ConfigMap (deployed with the services) contains shared LLM settings:
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `AWS_REGION` | `us-west-2` | AWS region for Bedrock API |
 | `OPENROUTER_TIMEOUT_SECONDS` | `30` | Request timeout for OpenRouter calls |
 
-To override, edit the ConfigMap:
+### Environment-Specific Overrides (llm-config-override)
+
+Use the `llm-config-override` ConfigMap to customize settings per environment:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `OPENROUTER_MODEL` | `openai/gpt-oss-120b:free` | OpenRouter model for recommendationservice |
+| `TZ` | `America/Los_Angeles` | Timezone for rate limiting active hours |
+| `LLM_ACTIVE_HOURS` | `9-17` | Hours when LLM calls are allowed (e.g., `9-17`, `8:30-16:30`, or `9-11,15-19`) |
+| `LLM_RATE_LIMIT_PER_MINUTE` | `2` | Max LLM calls per minute during active hours |
+| `LLM_SAMPLE_RATE` | `0.0001` | Fraction of requests eligible for LLM (0.01% default) |
+
+**Setup (one-time per namespace):**
 ```bash
-kubectl edit configmap llm-config -n <namespace>
+kubectl create configmap llm-config-override -n <namespace> \
+  --from-literal=TZ=Asia/Tokyo \
+  --from-literal=LLM_ACTIVE_HOURS=8:30-16:30
+```
+
+**Rate Limiting**: The recommendationservice uses OpenRouter's free tier which has strict limits (1000 requests/day with 10 credits). The rate limiting settings control when and how often LLM calls are made:
+- During `LLM_ACTIVE_HOURS`: Rate limited to `LLM_RATE_LIMIT_PER_MINUTE` calls per minute
+- Outside `LLM_ACTIVE_HOURS`: Sampled at `LLM_SAMPLE_RATE` (default ~1 call/hour)
+
+To update the override ConfigMap:
+```bash
+kubectl edit configmap llm-config-override -n <namespace>
 ```

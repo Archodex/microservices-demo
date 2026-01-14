@@ -16,11 +16,13 @@
 
 import json
 import os
+import random
 import re
 import time
 import traceback
 from collections import OrderedDict
 from concurrent import futures
+from datetime import datetime
 from decimal import Decimal
 from threading import Lock
 
@@ -49,12 +51,23 @@ from logger import getJSONLogger
 
 logger = getJSONLogger('recommendationservice-server')
 MAX_RECOMMENDATIONS = 5
-OPENROUTER_MODEL = "openai/gpt-oss-120b:free"
+DEFAULT_OPENROUTER_MODEL = "openai/gpt-oss-120b:free"
 CACHE_MAX_SIZE = 300
 CACHE_TTL_SECONDS = 15 * 60  # 15 minutes
+GLOBAL_CACHE_TTL_SECONDS = 60 * 60  # 1 hour for global recommendations
+
+# Rate limiting defaults
+DEFAULT_TZ = "America/Los_Angeles"
+DEFAULT_ACTIVE_HOURS = "9-17"
+DEFAULT_RATE_LIMIT_PER_MINUTE = 2
+DEFAULT_LLM_SAMPLE_RATE = 0.0001  # 0.01% - roughly 1 call/hour at 10k req/hour
+
 product_catalog_stub = None
 openrouter_client = None
 recommendation_cache = None
+llm_rate_limiter = None
+global_recommendations_cache = None
+openrouter_model = None
 
 
 class RecommendationCache:
@@ -91,6 +104,126 @@ class RecommendationCache:
 
     def _make_key(self, product_ids):
         return tuple(sorted(product_ids))
+
+
+class GlobalRecommendationsCache:
+    """Cache for global (non-personalized) recommendations used as fallback."""
+
+    def __init__(self, ttl_seconds):
+        self.ttl_seconds = ttl_seconds
+        self._lock = Lock()
+        self._recommendations = None
+        self._timestamp = 0
+
+    def get(self):
+        with self._lock:
+            if self._recommendations is None:
+                return None
+            if time.time() - self._timestamp > self.ttl_seconds:
+                return None
+            return list(self._recommendations)
+
+    def set(self, recommendations):
+        with self._lock:
+            self._recommendations = list(recommendations)
+            self._timestamp = time.time()
+
+
+class LLMRateLimiter:
+    """Rate limiter for LLM calls with time-based windows and sampling."""
+
+    def __init__(self, active_hours_str, rate_limit_per_minute, sample_rate):
+        self.active_windows = self._parse_active_hours(active_hours_str)
+        self.rate_limit_per_minute = rate_limit_per_minute
+        self.sample_rate = sample_rate
+        self._lock = Lock()
+        self._call_timestamps = []
+
+    def _parse_time(self, time_str):
+        """Parse time string like '9', '9:30', '16:45' into decimal hours."""
+        time_str = time_str.strip()
+        if ':' in time_str:
+            parts = time_str.split(':')
+            hours = int(parts[0])
+            minutes = int(parts[1]) if len(parts) > 1 else 0
+            return hours + minutes / 60.0
+        return float(time_str)
+
+    def _parse_active_hours(self, hours_str):
+        """Parse active hours string like '9-17', '8:30-16:30', or '9-11,15-19' into list of (start, end) tuples."""
+        windows = []
+        if not hours_str:
+            return windows
+        for window in hours_str.split(','):
+            window = window.strip()
+            if '-' not in window:
+                continue
+            # Split on first hyphen only to handle negative times edge case
+            hyphen_idx = window.find('-', 1) if window.startswith('-') else window.find('-')
+            if hyphen_idx == -1:
+                continue
+            start_str = window[:hyphen_idx]
+            end_str = window[hyphen_idx + 1:]
+            try:
+                start = self._parse_time(start_str)
+                end = self._parse_time(end_str)
+                if 0 <= start < 24 and 0 <= end < 24:
+                    windows.append((start, end))
+            except (ValueError, IndexError):
+                continue
+        return windows
+
+    def _is_within_active_hours(self):
+        """Check if current local time is within any active window."""
+        if not self.active_windows:
+            return True  # No windows configured = always active
+        now = datetime.now()
+        current_time = now.hour + now.minute / 60.0
+        for start, end in self.active_windows:
+            if start <= end:
+                # Normal window like 9-17 or 8:30-16:30
+                if start <= current_time < end:
+                    return True
+            else:
+                # Overnight window like 22-6
+                if current_time >= start or current_time < end:
+                    return True
+        return False
+
+    def _passes_sampling(self):
+        """Check if this request passes probabilistic sampling."""
+        return random.random() < self.sample_rate
+
+    def _check_rate_limit(self):
+        """Check if we're under the per-minute rate limit. Returns True if allowed."""
+        now = time.time()
+        with self._lock:
+            # Remove timestamps older than 60 seconds
+            self._call_timestamps = [ts for ts in self._call_timestamps if now - ts < 60]
+            if len(self._call_timestamps) >= self.rate_limit_per_minute:
+                return False
+            self._call_timestamps.append(now)
+            return True
+
+    def should_call_llm(self):
+        """
+        Determine if an LLM call should be made.
+        Returns tuple of (should_call: bool, reason: str).
+
+        During active hours: use rate limiting (e.g., 2/min)
+        Outside active hours: use sampling (e.g., ~1/hour)
+        """
+        if self._is_within_active_hours():
+            # During active hours: rate limiting applies
+            if not self._check_rate_limit():
+                return False, "rate_limited"
+            return True, "allowed"
+        else:
+            # Outside active hours: sampling applies
+            if not self._passes_sampling():
+                return False, "sampling_skip"
+            return True, "allowed_via_sampling"
+
 
 def initStackdriverProfiling():
   project_id = None
@@ -149,10 +282,23 @@ class RecommendationService(demo_pb2_grpc.RecommendationServiceServicer):
             if recommendation_cache:
                 recommendation_cache.set(request.product_ids, remaining_ids)
             return remaining_ids
+
+        # Check existing cache first (exact match for this cart)
         cached = recommendation_cache.get(request.product_ids) if recommendation_cache else None
         if cached:
             logger.info("Returning cached recommendations for product_ids=%s", sorted(request.product_ids))
             return cached
+
+        # Check rate limiter to decide if we should call LLM
+        should_call, reason = llm_rate_limiter.should_call_llm() if llm_rate_limiter else (True, "no_limiter")
+
+        if not should_call:
+            # Use fallback: global recommendations filtered by exclusions
+            logger.info("LLM call skipped (%s), using fallback recommendations", reason)
+            return self._get_fallback_recommendations(remaining_ids, excluded_ids)
+
+        # Proceed with LLM call
+        logger.info("LLM call allowed (%s), requesting from OpenRouter", reason)
         ai_ids = _request_openrouter_recommendations(
             catalog_payload=catalog_payload,
             excluded_ids=excluded_ids,
@@ -162,11 +308,38 @@ class RecommendationService(demo_pb2_grpc.RecommendationServiceServicer):
         )
         if not ai_ids:
             raise RuntimeError("OpenRouter returned no valid product IDs")
-        # double-check items exist in catalog payload
+
+        # Double-check items exist in catalog payload
         cleaned = [pid for pid in ai_ids if pid in allowed_ids]
+
+        # Cache results
         if recommendation_cache:
             recommendation_cache.set(request.product_ids, cleaned)
+
+        # Also update global cache for fallback use (without exclusions applied)
+        if global_recommendations_cache:
+            # Store all recommended IDs before filtering for global fallback
+            global_recommendations_cache.set(cleaned)
+
         return cleaned
+
+    def _get_fallback_recommendations(self, remaining_ids, excluded_ids):
+        """Get fallback recommendations when LLM is not called."""
+        # First try global cache (previous LLM responses)
+        if global_recommendations_cache:
+            global_recs = global_recommendations_cache.get()
+            if global_recs:
+                # Filter out excluded items and return
+                filtered = [pid for pid in global_recs if pid not in excluded_ids]
+                if filtered:
+                    logger.info("Using global cache fallback, %d recommendations", len(filtered[:MAX_RECOMMENDATIONS]))
+                    return filtered[:MAX_RECOMMENDATIONS]
+
+        # Final fallback: random selection from remaining products
+        logger.info("Using random fallback, selecting from %d products", len(remaining_ids))
+        if len(remaining_ids) <= MAX_RECOMMENDATIONS:
+            return remaining_ids
+        return random.sample(remaining_ids, MAX_RECOMMENDATIONS)
 
     def Check(self, request, context):
         return health_pb2.HealthCheckResponse(
@@ -188,7 +361,7 @@ def _init_openrouter_client():
         headers["HTTP-Referer"] = site_url
     if app_name:
         headers["X-Title"] = app_name
-    logger.info("OpenRouter support enabled with model %s", OPENROUTER_MODEL)
+    logger.info("OpenRouter support enabled with model %s", openrouter_model)
     return OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=api_key,
@@ -243,7 +416,7 @@ def _request_openrouter_recommendations(
         "response_template": {"product_ids": ["product-id-1", "product-id-2"]},
     }
     completion = openrouter_client.chat.completions.create(
-        model=OPENROUTER_MODEL,
+        model=openrouter_model,
         temperature=0.2,
         messages=[
             {"role": "system", "content": instructions},
@@ -329,6 +502,17 @@ def _find_json_snippet(text):
 if __name__ == "__main__":
     logger.info("initializing recommendationservice")
 
+    # Set timezone for time-based rate limiting (must be done before datetime calls)
+    tz = os.environ.get('TZ', DEFAULT_TZ)
+    if 'TZ' not in os.environ:
+        os.environ['TZ'] = tz
+        # Force libc to re-read TZ
+        try:
+            time.tzset()
+        except AttributeError:
+            pass  # tzset not available on Windows
+    logger.info("Timezone set to: %s", tz)
+
     try:
       if "DISABLE_PROFILER" in os.environ:
         raise KeyError()
@@ -366,8 +550,23 @@ if __name__ == "__main__":
     logger.info("product catalog address: " + catalog_addr)
     channel = grpc.insecure_channel(catalog_addr)
     product_catalog_stub = demo_pb2_grpc.ProductCatalogServiceStub(channel)
+
+    # Initialize OpenRouter model (can be overridden via llm-config-override ConfigMap)
+    openrouter_model = os.environ.get('OPENROUTER_MODEL', DEFAULT_OPENROUTER_MODEL)
     openrouter_client = _init_openrouter_client()
     recommendation_cache = RecommendationCache(CACHE_MAX_SIZE, CACHE_TTL_SECONDS)
+
+    # Initialize rate limiter
+    active_hours = os.environ.get('LLM_ACTIVE_HOURS', DEFAULT_ACTIVE_HOURS)
+    rate_limit = int(os.environ.get('LLM_RATE_LIMIT_PER_MINUTE', DEFAULT_RATE_LIMIT_PER_MINUTE))
+    sample_rate = float(os.environ.get('LLM_SAMPLE_RATE', DEFAULT_LLM_SAMPLE_RATE))
+    llm_rate_limiter = LLMRateLimiter(active_hours, rate_limit, sample_rate)
+    logger.info("LLM rate limiter initialized: active_hours=%s, rate_limit=%d/min, sample_rate=%.4f",
+                active_hours, rate_limit, sample_rate)
+
+    # Initialize global recommendations cache for fallback
+    global_recommendations_cache = GlobalRecommendationsCache(GLOBAL_CACHE_TTL_SECONDS)
+    logger.info("Global recommendations cache initialized with TTL=%d seconds", GLOBAL_CACHE_TTL_SECONDS)
 
     # create gRPC server
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))

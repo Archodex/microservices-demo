@@ -71,6 +71,37 @@ spec:
             configMapKeyRef:
               name: llm-config
               key: OPENROUTER_TIMEOUT_SECONDS
+        # Optional overrides from llm-config-override ConfigMap
+        - name: TZ
+          valueFrom:
+            configMapKeyRef:
+              name: llm-config-override
+              key: TZ
+              optional: true
+        - name: LLM_ACTIVE_HOURS
+          valueFrom:
+            configMapKeyRef:
+              name: llm-config-override
+              key: LLM_ACTIVE_HOURS
+              optional: true
+        - name: LLM_RATE_LIMIT_PER_MINUTE
+          valueFrom:
+            configMapKeyRef:
+              name: llm-config-override
+              key: LLM_RATE_LIMIT_PER_MINUTE
+              optional: true
+        - name: LLM_SAMPLE_RATE
+          valueFrom:
+            configMapKeyRef:
+              name: llm-config-override
+              key: LLM_SAMPLE_RATE
+              optional: true
+        - name: OPENROUTER_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: llm-config-override
+              key: OPENROUTER_MODEL
+              optional: true
         resources:
           requests:
             cpu: 100m

@@ -22,6 +22,42 @@ pip install -r requirements.txt
 | `OPENROUTER_APP_NAME` | Optional label for the `X-Title` header (defaults to `recommendationservice`). |
 | `OPENROUTER_TIMEOUT_SECONDS` | Custom request timeout for OpenRouter calls. |
 
+### Optional configuration
+
+These variables have sensible defaults but can be overridden:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENROUTER_MODEL` | `openai/gpt-oss-120b:free` | OpenRouter model to use for recommendations. |
+| `TZ` | `America/Los_Angeles` | Timezone for active hours calculation. |
+| `LLM_ACTIVE_HOURS` | `9-17` | Hours when rate limiting applies. Supports single ranges (`9-17`), half-hours (`8:30-16:30`), or multiple windows (`9-11,15-19`). |
+| `LLM_RATE_LIMIT_PER_MINUTE` | `2` | Maximum LLM calls per minute during active hours. |
+| `LLM_SAMPLE_RATE` | `0.0001` | Fraction of requests eligible for LLM calls outside active hours (0.0-1.0). Default 0.01% = ~1 call/hour at 10k requests/hour. |
+
+**Behavior:**
+- During active hours: Rate limited to `LLM_RATE_LIMIT_PER_MINUTE` calls/minute
+- Outside active hours: Sampled at `LLM_SAMPLE_RATE` (~1 call/hour by default)
+
+When LLM calls are skipped (rate limited or sampling miss), the service returns:
+1. Previously cached global recommendations (filtered for the user's cart), or
+2. Random product selection from the catalog.
+
+### Kubernetes configuration override
+
+In Kubernetes, these optional settings are read from the `llm-config-override` ConfigMap. Create it once per namespace to customize:
+
+```bash
+kubectl create configmap llm-config-override -n <namespace> \
+  --from-literal=TZ=Asia/Tokyo \
+  --from-literal=LLM_ACTIVE_HOURS=8:30-16:30 \
+  --from-literal=LLM_SAMPLE_RATE=0.001 \
+  --from-literal=OPENROUTER_MODEL=openai/gpt-oss-120b:free
+```
+
+This ConfigMap persists across `skaffold run` deployments. To update, use `kubectl edit` or delete and recreate.
+
+## Local development
+
 Run the product catalog service separately (`go run .` from `src/productcatalogservice`), then start the recommendation service:
 
 ```
