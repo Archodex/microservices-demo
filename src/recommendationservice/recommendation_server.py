@@ -49,7 +49,7 @@ from logger import getJSONLogger
 
 logger = getJSONLogger('recommendationservice-server')
 MAX_RECOMMENDATIONS = 5
-OPENROUTER_MODEL = "nex-agi/deepseek-v3.1-nex-n1:free"
+OPENROUTER_MODEL = "openai/gpt-oss-120b:free"
 CACHE_MAX_SIZE = 300
 CACHE_TTL_SECONDS = 15 * 60  # 15 minutes
 product_catalog_stub = None
@@ -357,7 +357,7 @@ if __name__ == "__main__":
     except (KeyError, DefaultCredentialsError):
         logger.info("Tracing disabled.")
     except Exception as e:
-        logger.warn(f"Exception on Cloud Trace setup: {traceback.format_exc()}, tracing disabled.") 
+        logger.warn(f"Exception on Cloud Trace setup: {traceback.format_exc()}, tracing disabled.")
 
     port = os.environ.get('PORT', "8080")
     catalog_addr = os.environ.get('PRODUCT_CATALOG_SERVICE_ADDR', '')

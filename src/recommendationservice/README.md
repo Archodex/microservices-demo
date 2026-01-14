@@ -1,6 +1,6 @@
 # Recommendation Service
 
-This service provides product recommendations over gRPC. Every call sends the full product catalog to OpenRouter's `nex-agi/deepseek-v3.1-nex-n1:free` model (via the official `openai` Python SDK with a custom base URL) so the AI service can return context-aware product IDs. An OpenRouter API key is now required; the service will exit during startup if the key is missing.
+This service provides product recommendations over gRPC. Every call sends the full product catalog to OpenRouter's `openai/gpt-oss-120b:free` model (via the official `openai` Python SDK with a custom base URL) so the AI service can return context-aware product IDs. An OpenRouter API key is now required; the service will exit during startup if the key is missing. To allow use of `openai/gpt-oss-120b:free`, OpenRouter [priacy settings](https://openrouter.ai/settings/privacy) must be updated to allow `Enable free endpoints that may publish prompts`
 
 ## Local development
 
