@@ -354,6 +354,7 @@ def _init_openrouter_client():
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY must be set for recommendationservice")
+    base_url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
     site_url = os.environ.get("OPENROUTER_SITE_URL")
     app_name = os.environ.get("OPENROUTER_APP_NAME", "recommendationservice")
     headers = {}
@@ -361,9 +362,9 @@ def _init_openrouter_client():
         headers["HTTP-Referer"] = site_url
     if app_name:
         headers["X-Title"] = app_name
-    logger.info("OpenRouter support enabled with model %s", openrouter_model)
+    logger.info("OpenRouter support enabled with model %s at %s", openrouter_model, base_url)
     return OpenAI(
-        base_url="https://openrouter.ai/api/v1",
+        base_url=base_url,
         api_key=api_key,
         default_headers=headers or None,
     )
