@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import enum
 import json
 import os
 import random
@@ -45,7 +46,8 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 # Instrument httpx BEFORE importing OpenAI (which uses httpx internally)
 HTTPXClientInstrumentor().instrument()
 
-from openai import OpenAI
+import httpx
+from openai import APIConnectionError, OpenAI
 
 from logger import getJSONLogger
 
@@ -62,12 +64,27 @@ DEFAULT_ACTIVE_HOURS = "9-17"
 DEFAULT_RATE_LIMIT_PER_MINUTE = 2
 DEFAULT_LLM_SAMPLE_RATE = 0.0001  # 0.01% - roughly 1 call/hour at 10k req/hour
 
+# LLM mode defaults
+DEFAULT_LOCAL_BASE_URL = "http://mock-openrouter:8080/api/v1"
+DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_LOCAL_MODELS = "anthropic/claude-sonnet-4.5,google/gemini-2.5-flash,openai/gpt-4o-mini,deepseek/deepseek-chat-v3-0324"
+
+# Circuit breaker defaults
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5
+CIRCUIT_BREAKER_INITIAL_BACKOFF = 30  # seconds
+CIRCUIT_BREAKER_MAX_BACKOFF = 86400  # 24 hours
+
 product_catalog_stub = None
 openrouter_client = None
 recommendation_cache = None
 llm_rate_limiter = None
 global_recommendations_cache = None
 openrouter_model = None
+llm_mode = None
+openrouter_local_models = None
+local_client = None
+openrouter_fallback_client = None
+circuit_breaker = None
 
 
 class RecommendationCache:
@@ -225,6 +242,73 @@ class LLMRateLimiter:
             return True, "allowed_via_sampling"
 
 
+class CircuitState(enum.Enum):
+    CLOSED = "CLOSED"
+    OPEN = "OPEN"
+    HALF_OPEN = "HALF_OPEN"
+
+
+class LocalCircuitBreaker:
+    """Circuit breaker for local LLM endpoint with fallback to openrouter."""
+
+    def __init__(self, failure_threshold=CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+                 initial_backoff=CIRCUIT_BREAKER_INITIAL_BACKOFF,
+                 max_backoff=CIRCUIT_BREAKER_MAX_BACKOFF):
+        self.failure_threshold = failure_threshold
+        self.initial_backoff = initial_backoff
+        self.max_backoff = max_backoff
+        self._lock = Lock()
+        self.state = CircuitState.CLOSED
+        self.consecutive_failures = 0
+        self.backoff_seconds = initial_backoff
+        self.open_since = 0
+
+    def should_use_local(self):
+        with self._lock:
+            if self.state == CircuitState.CLOSED:
+                return True
+            if self.state == CircuitState.OPEN:
+                elapsed = time.time() - self.open_since
+                if elapsed >= self.backoff_seconds:
+                    self.state = CircuitState.HALF_OPEN
+                    logger.info("Circuit breaker HALF_OPEN: probing local endpoint after %ds backoff",
+                                int(self.backoff_seconds))
+                    return True
+                return False
+            # HALF_OPEN — allow one probe
+            return True
+
+    def backoff_remaining(self):
+        with self._lock:
+            if self.state != CircuitState.OPEN:
+                return 0
+            elapsed = time.time() - self.open_since
+            return max(0, int(self.backoff_seconds - elapsed))
+
+    def record_success(self):
+        with self._lock:
+            if self.state != CircuitState.CLOSED:
+                logger.info("Circuit breaker CLOSED: local endpoint recovered")
+            self.state = CircuitState.CLOSED
+            self.consecutive_failures = 0
+            self.backoff_seconds = self.initial_backoff
+
+    def record_failure(self):
+        with self._lock:
+            self.consecutive_failures += 1
+            if self.state == CircuitState.HALF_OPEN:
+                self.backoff_seconds = min(self.backoff_seconds * 2, self.max_backoff)
+                self.state = CircuitState.OPEN
+                self.open_since = time.time()
+                logger.info("Circuit breaker OPEN: local probe failed, backoff increased to %ds",
+                            int(self.backoff_seconds))
+            elif self.consecutive_failures >= self.failure_threshold:
+                self.state = CircuitState.OPEN
+                self.open_since = time.time()
+                logger.info("Circuit breaker OPEN: local endpoint failed %d times, falling back to openrouter for %ds",
+                            self.consecutive_failures, int(self.backoff_seconds))
+
+
 def initStackdriverProfiling():
   project_id = None
   try:
@@ -289,23 +373,66 @@ class RecommendationService(demo_pb2_grpc.RecommendationServiceServicer):
             logger.info("Returning cached recommendations for product_ids=%s", sorted(request.product_ids))
             return cached
 
-        # Check rate limiter to decide if we should call LLM
-        should_call, reason = llm_rate_limiter.should_call_llm() if llm_rate_limiter else (True, "no_limiter")
+        # Determine client and model based on LLM mode and circuit breaker
+        if llm_mode == "local" and circuit_breaker:
+            use_local = circuit_breaker.should_use_local()
+            if use_local:
+                active_client = local_client
+                active_model = random.choice(openrouter_local_models)
+                skip_rate_limit = True
+            else:
+                active_client = openrouter_fallback_client
+                active_model = openrouter_model
+                skip_rate_limit = False
+        else:
+            active_client = openrouter_client
+            active_model = openrouter_model
+            skip_rate_limit = False
 
-        if not should_call:
-            # Use fallback: global recommendations filtered by exclusions
-            logger.info("LLM call skipped (%s), using fallback recommendations", reason)
-            return self._get_fallback_recommendations(remaining_ids, excluded_ids)
+        # Check rate limiter (skipped in local mode when circuit is closed/half-open)
+        if not skip_rate_limit:
+            should_call, reason = llm_rate_limiter.should_call_llm() if llm_rate_limiter else (True, "no_limiter")
+            if not should_call:
+                cb_state = circuit_breaker.state.value if circuit_breaker else "N/A"
+                cb_remaining = circuit_breaker.backoff_remaining() if circuit_breaker else 0
+                logger.info("LLM call skipped (%s), using fallback recommendations [circuit_breaker=%s, backoff_remaining=%ds]",
+                            reason, cb_state, cb_remaining)
+                return self._get_fallback_recommendations(remaining_ids, excluded_ids)
+        else:
+            reason = "local_no_limit"
 
-        # Proceed with LLM call
-        logger.info("LLM call allowed (%s), requesting from OpenRouter", reason)
-        ai_ids = _request_openrouter_recommendations(
-            catalog_payload=catalog_payload,
-            excluded_ids=excluded_ids,
-            user_id=request.user_id or "anonymous",
-            max_results=MAX_RECOMMENDATIONS,
-            allowed_ids=allowed_ids,
-        )
+        # Log the LLM call with circuit breaker info when relevant
+        if circuit_breaker and circuit_breaker.state != CircuitState.CLOSED:
+            cb_state = circuit_breaker.state.value
+            cb_remaining = circuit_breaker.backoff_remaining()
+            logger.info("LLM call allowed (%s), requesting from OpenRouter [circuit_breaker=%s, backoff_remaining=%ds]",
+                        reason, cb_state, cb_remaining)
+        else:
+            logger.info("LLM call allowed (%s), requesting from OpenRouter", reason)
+
+        # Make the LLM call with circuit breaker error handling for local mode
+        try:
+            ai_ids = _request_openrouter_recommendations(
+                client=active_client,
+                model=active_model,
+                catalog_payload=catalog_payload,
+                excluded_ids=excluded_ids,
+                user_id=request.user_id or "anonymous",
+                max_results=MAX_RECOMMENDATIONS,
+                allowed_ids=allowed_ids,
+            )
+        except (ConnectionError, OSError, APIConnectionError, httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            if circuit_breaker and llm_mode == "local":
+                circuit_breaker.record_failure()
+                logger.warning("Local LLM call failed with connection error: %s", exc)
+                # If we were using local, retry with fallback
+                if skip_rate_limit:
+                    return self._get_fallback_recommendations(remaining_ids, excluded_ids)
+            raise
+        else:
+            if circuit_breaker and llm_mode == "local":
+                circuit_breaker.record_success()
+
         if not ai_ids:
             raise RuntimeError("OpenRouter returned no valid product IDs")
 
@@ -350,11 +477,12 @@ class RecommendationService(demo_pb2_grpc.RecommendationServiceServicer):
             status=health_pb2.HealthCheckResponse.UNIMPLEMENTED)
 
 
-def _init_openrouter_client():
+def _init_openrouter_client(base_url=None):
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY must be set for recommendationservice")
-    base_url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+    if base_url is None:
+        base_url = os.environ.get("OPENROUTER_BASE_URL", DEFAULT_OPENROUTER_BASE_URL)
     site_url = os.environ.get("OPENROUTER_SITE_URL")
     app_name = os.environ.get("OPENROUTER_APP_NAME", "recommendationservice")
     headers = {}
@@ -362,7 +490,7 @@ def _init_openrouter_client():
         headers["HTTP-Referer"] = site_url
     if app_name:
         headers["X-Title"] = app_name
-    logger.info("OpenRouter support enabled with model %s at %s", openrouter_model, base_url)
+    logger.info("OpenRouter client initialized at %s", base_url)
     return OpenAI(
         base_url=base_url,
         api_key=api_key,
@@ -398,6 +526,8 @@ def _format_price(money):
 
 def _request_openrouter_recommendations(
     *,
+    client,
+    model,
     catalog_payload,
     excluded_ids,
     user_id,
@@ -416,8 +546,8 @@ def _request_openrouter_recommendations(
         "catalog": catalog_payload,
         "response_template": {"product_ids": ["product-id-1", "product-id-2"]},
     }
-    completion = openrouter_client.chat.completions.create(
-        model=openrouter_model,
+    completion = client.chat.completions.create(
+        model=model,
         temperature=0.2,
         messages=[
             {"role": "system", "content": instructions},
@@ -552,18 +682,45 @@ if __name__ == "__main__":
     channel = grpc.insecure_channel(catalog_addr)
     product_catalog_stub = demo_pb2_grpc.ProductCatalogServiceStub(channel)
 
-    # Initialize OpenRouter model (can be overridden via llm-config-override ConfigMap)
+    # Initialize LLM mode
+    llm_mode = os.environ.get('LLM_MODE', 'local')
     openrouter_model = os.environ.get('OPENROUTER_MODEL', DEFAULT_OPENROUTER_MODEL)
-    openrouter_client = _init_openrouter_client()
     recommendation_cache = RecommendationCache(CACHE_MAX_SIZE, CACHE_TTL_SECONDS)
 
-    # Initialize rate limiter
+    # Initialize rate limiter (used in openrouter mode, and as fallback in local mode)
     active_hours = os.environ.get('LLM_ACTIVE_HOURS', DEFAULT_ACTIVE_HOURS)
     rate_limit = int(os.environ.get('LLM_RATE_LIMIT_PER_MINUTE', DEFAULT_RATE_LIMIT_PER_MINUTE))
     sample_rate = float(os.environ.get('LLM_SAMPLE_RATE', DEFAULT_LLM_SAMPLE_RATE))
     llm_rate_limiter = LLMRateLimiter(active_hours, rate_limit, sample_rate)
     logger.info("LLM rate limiter initialized: active_hours=%s, rate_limit=%d/min, sample_rate=%.4f",
                 active_hours, rate_limit, sample_rate)
+
+    if llm_mode == "local":
+        # Parse local models list
+        local_models_str = os.environ.get('OPENROUTER_LOCAL_MODELS', DEFAULT_LOCAL_MODELS)
+        openrouter_local_models = [m.strip() for m in local_models_str.split(',') if m.strip()]
+        if not openrouter_local_models:
+            openrouter_local_models = [openrouter_model]
+
+        # Initialize local client (mock-openrouter)
+        local_base_url = os.environ.get('OPENROUTER_BASE_URL', DEFAULT_LOCAL_BASE_URL)
+        local_client = _init_openrouter_client(base_url=local_base_url)
+
+        # Initialize fallback client (real openrouter)
+        openrouter_fallback_client = _init_openrouter_client(base_url=DEFAULT_OPENROUTER_BASE_URL)
+
+        # Set default active client to local
+        openrouter_client = local_client
+
+        # Initialize circuit breaker
+        circuit_breaker = LocalCircuitBreaker()
+
+        logger.info("LLM_MODE=local: models=%s, local_url=%s, circuit_breaker=enabled",
+                    openrouter_local_models, local_base_url)
+    else:
+        # openrouter mode: single client, existing behavior
+        openrouter_client = _init_openrouter_client()
+        logger.info("LLM_MODE=openrouter: model=%s", openrouter_model)
 
     # Initialize global recommendations cache for fallback
     global_recommendations_cache = GlobalRecommendationsCache(GLOBAL_CACHE_TTL_SECONDS)

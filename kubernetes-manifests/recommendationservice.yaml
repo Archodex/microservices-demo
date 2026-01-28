@@ -71,11 +71,17 @@ spec:
             configMapKeyRef:
               name: llm-config
               key: OPENROUTER_TIMEOUT_SECONDS
-        - name: OPENROUTER_BASE_URL
+        - name: LLM_MODE
           valueFrom:
             configMapKeyRef:
               name: llm-config
-              key: OPENROUTER_BASE_URL
+              key: LLM_MODE
+              optional: true
+        - name: OPENROUTER_LOCAL_MODELS
+          valueFrom:
+            configMapKeyRef:
+              name: llm-config
+              key: OPENROUTER_LOCAL_MODELS
               optional: true
         # Optional overrides from llm-config-override ConfigMap
         - name: TZ

@@ -22,5 +22,5 @@ metadata:
 data:
   AWS_REGION: "us-west-2"
   OPENROUTER_TIMEOUT_SECONDS: "30"
-  # OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1"
-  OPENROUTER_BASE_URL: "http://mock-openrouter:8080/api/v1"
+  LLM_MODE: "local"
+  OPENROUTER_LOCAL_MODELS: "anthropic/claude-sonnet-4.5,google/gemini-2.5-flash,openai/gpt-4o-mini,deepseek/deepseek-chat-v3-0324"
