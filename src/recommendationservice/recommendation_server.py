@@ -65,7 +65,7 @@ DEFAULT_RATE_LIMIT_PER_MINUTE = 2
 DEFAULT_LLM_SAMPLE_RATE = 0.0001  # 0.01% - roughly 1 call/hour at 10k req/hour
 
 # LLM mode defaults
-DEFAULT_LOCAL_BASE_URL = "http://mock-openrouter:8080/api/v1"
+DEFAULT_LOCAL_BASE_URL = "https://mock-openrouter:8443/api/v1"
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_LOCAL_MODELS = "anthropic/claude-sonnet-4.5,google/gemini-2.5-flash,openai/gpt-4o-mini,deepseek/deepseek-chat-v3-0324"
 
@@ -491,11 +491,15 @@ def _init_openrouter_client(base_url=None):
     if app_name:
         headers["X-Title"] = app_name
     logger.info("OpenRouter client initialized at %s", base_url)
-    return OpenAI(
+    kwargs = dict(
         base_url=base_url,
         api_key=api_key,
         default_headers=headers or None,
     )
+    # Skip TLS verification for internal services with self-signed certs
+    if base_url and base_url.startswith("https://mock-openrouter"):
+        kwargs["http_client"] = httpx.Client(verify=False)
+    return OpenAI(**kwargs)
 
 
 def _serialize_catalog_for_ai(products):

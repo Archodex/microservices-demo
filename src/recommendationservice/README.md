@@ -33,8 +33,18 @@ These variables have sensible defaults but can be overridden:
 | `LLM_ACTIVE_HOURS` | `9-17` | Hours when rate limiting applies. Supports single ranges (`9-17`), half-hours (`8:30-16:30`), or multiple windows (`9-11,15-19`). |
 | `LLM_RATE_LIMIT_PER_MINUTE` | `2` | Maximum LLM calls per minute during active hours. |
 | `LLM_SAMPLE_RATE` | `0.0001` | Fraction of requests eligible for LLM calls outside active hours (0.0-1.0). Default 0.01% = ~1 call/hour at 10k requests/hour. |
+| `LLM_MODE` | `local` | LLM backend mode: `local` (mock-openrouter + Ollama) or `openrouter` (real OpenRouter API). |
+| `OPENROUTER_LOCAL_MODELS` | `anthropic/claude-sonnet-4.5,google/gemini-2.5-flash,openai/gpt-4o-mini,deepseek/deepseek-chat-v3-0324` | Comma-separated list of model names to randomly select from in local mode. |
 
 **Behavior:**
+
+**Local mode** (`LLM_MODE=local`, default):
+- Connects to mock-openrouter over HTTPS (`https://mock-openrouter:8443/api/v1`) with self-signed cert verification disabled
+- No rate limiting — every request triggers an LLM call against the local Ollama instance
+- Randomly selects a model name from `OPENROUTER_LOCAL_MODELS` for each request (model name is cosmetic; Ollama always uses its configured model)
+- Circuit breaker: if the local endpoint fails repeatedly, falls back to the real OpenRouter API with rate limiting applied
+
+**OpenRouter mode** (`LLM_MODE=openrouter`):
 - During active hours: Rate limited to `LLM_RATE_LIMIT_PER_MINUTE` calls/minute
 - Outside active hours: Sampled at `LLM_SAMPLE_RATE` (~1 call/hour by default)
 
