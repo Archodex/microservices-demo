@@ -61,6 +61,59 @@ spec:
           value: "productcatalogservice:3550"
         - name: DISABLE_PROFILER
           value: "1"
+        - name: OPENROUTER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: recommendationservice-openrouter
+              key: OPENROUTER_API_KEY
+        - name: OPENROUTER_TIMEOUT_SECONDS
+          valueFrom:
+            configMapKeyRef:
+              name: llm-config
+              key: OPENROUTER_TIMEOUT_SECONDS
+        - name: LLM_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: llm-config
+              key: LLM_MODE
+              optional: true
+        - name: OPENROUTER_LOCAL_MODELS
+          valueFrom:
+            configMapKeyRef:
+              name: llm-config
+              key: OPENROUTER_LOCAL_MODELS
+              optional: true
+        # Optional overrides from llm-config-override ConfigMap
+        - name: TZ
+          valueFrom:
+            configMapKeyRef:
+              name: llm-config-override
+              key: TZ
+              optional: true
+        - name: LLM_ACTIVE_HOURS
+          valueFrom:
+            configMapKeyRef:
+              name: llm-config-override
+              key: LLM_ACTIVE_HOURS
+              optional: true
+        - name: LLM_RATE_LIMIT_PER_MINUTE
+          valueFrom:
+            configMapKeyRef:
+              name: llm-config-override
+              key: LLM_RATE_LIMIT_PER_MINUTE
+              optional: true
+        - name: LLM_SAMPLE_RATE
+          valueFrom:
+            configMapKeyRef:
+              name: llm-config-override
+              key: LLM_SAMPLE_RATE
+              optional: true
+        - name: OPENROUTER_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: llm-config-override
+              key: OPENROUTER_MODEL
+              optional: true
         resources:
           requests:
             cpu: 100m

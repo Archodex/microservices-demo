@@ -1,4 +1,4 @@
-# Copyright 2022 Google LLC
+# Copyright 2024 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,18 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-- adservice.yaml
-- cartservice.yaml
-- checkoutservice.yaml
-- currencyservice.yaml
-- emailservice.yaml
-- frontend.yaml
-- loadgenerator.yaml
-- paymentservice.yaml
-- productcatalogservice.yaml
-- recommendationservice.yaml
-- shippingservice.yaml
-- llm-config.yaml
+# ConfigMap for LLM service configuration.
+# These values can be overridden without code changes:
+#   kubectl edit configmap llm-config
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llm-config
+data:
+  AWS_REGION: "us-west-2"
+  OPENROUTER_TIMEOUT_SECONDS: "30"
+  LLM_MODE: "local"
+  OPENROUTER_LOCAL_MODELS: "anthropic/claude-sonnet-4.5,google/gemini-2.5-flash,openai/gpt-4o-mini,deepseek/deepseek-chat-v3-0324"
