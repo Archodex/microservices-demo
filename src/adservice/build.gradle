@@ -1,4 +1,5 @@
 plugins {
+    id 'com.google.osdetector' version '1.7.0'
     id 'com.google.protobuf' version '0.9.4'
     id 'com.github.sherter.google-java-format' version '0.9'
     id 'idea'
@@ -18,10 +19,17 @@ def grpcVersion = "1.71.0"
 def jacksonCoreVersion = "2.18.3"
 def jacksonDatabindVersion = "2.18.3"
 def protocVersion = "4.30.1"
+def awsSdkVersion = "2.40.9"
 
-tasks.withType(JavaCompile) {
-    sourceCompatibility = JavaVersion.VERSION_19
-    targetCompatibility = JavaVersion.VERSION_19
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }
 
 ext {
@@ -41,11 +49,14 @@ dependencies {
                 "io.grpc:grpc-services:${grpcVersion}",
                 "io.grpc:grpc-census:${grpcVersion}",
                 "org.apache.logging.log4j:log4j-core:2.24.3",
-                "com.google.protobuf:protobuf-java:${protocVersion}"
-
-        runtimeOnly "com.fasterxml.jackson.core:jackson-core:${jacksonCoreVersion}",
+                "com.google.protobuf:protobuf-java:${protocVersion}",
+                "com.fasterxml.jackson.core:jackson-core:${jacksonCoreVersion}",
                 "com.fasterxml.jackson.core:jackson-databind:${jacksonDatabindVersion}",
-                "io.netty:netty-tcnative-boringssl-static:2.0.70.Final"
+                "software.amazon.awssdk:bedrock:${awsSdkVersion}",
+                "software.amazon.awssdk:bedrockruntime:${awsSdkVersion}",
+                "software.amazon.cryptools:AmazonCorrettoCryptoProvider:2.4.1:${osdetector.classifier}"
+
+        runtimeOnly "io.netty:netty-tcnative-boringssl-static:2.0.70.Final"
     }
 }
 

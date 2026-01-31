@@ -26,6 +26,7 @@ resources:
  - productcatalogservice.yaml
  - recommendationservice.yaml
  - shippingservice.yaml
+ - llm-config.yaml
 components:
 - ../kustomize/components/otel-tracing
 # - ../kustomize/components/cymbal-branding

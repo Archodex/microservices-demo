@@ -1,6 +1,6 @@
 # Ad Service
 
-The Ad service provides advertisement based on context keys. If no context keys are provided then it returns random ads.
+The Ad service now generates ads dynamically using AWS Bedrock (Amazon Nova 2 Lite). For each request it sends the full product catalog and the incoming context keys to an LLM, so the returned ads are relevant to the user's interests. If Bedrock returns an error the service surfaces a 500 to the caller instead of falling back to static ads.
 
 ## Building locally
 
@@ -26,3 +26,12 @@ From `src/adservice/`, run:
 docker build ./
 ```
 
+## Configuration
+
+Set the following environment variables before running the service (and when deploying):
+
+| Variable | Description |
+| --- | --- |
+| `PRODUCT_CATALOG_SERVICE_ADDR` | Host:port for the product catalog gRPC endpoint (e.g. `productcatalogservice:3550`). |
+| `AWS_REGION` | AWS region to use for Bedrock (for example `us-east-1`). |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Credentials for invoking Bedrock. These must grant access to the Amazon Nova 2 Lite model. |
